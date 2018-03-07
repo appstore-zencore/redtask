@@ -73,7 +73,16 @@ class TestRedtask(unittest.TestCase):
 
     def test03(self):
         wsm = WorkerStateManager(self.connection, "worker03", expire=1, prefix="redtasktest")
+        key = wsm.worker_info_storage.make_key(wsm.get_worker_key())
         wsm.update()
-        assert self.connection.keys("redtasktest:worker:info:worker03")
-        time.self(3)
-        assert not self.connection.keys("redtasktest:worker:info:worker03")
+        assert self.connection.keys(key)
+        time.sleep(2)
+        assert not self.connection.keys(key)
+
+    def test04(self):
+        wsm = WorkerStateManager(self.connection, "worker04", expire=30, prefix="redtasktest")
+        key = wsm.worker_info_storage.make_key(wsm.get_worker_key())
+        wsm.update()
+        assert self.connection.keys(key)
+        wsm.delete()
+        assert not self.connection.keys(key)

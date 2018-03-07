@@ -15,16 +15,13 @@ class WorkerStateManager(object):
         self.worker_name = worker_name
         self.prefix = prefix
         self.expire = expire
-        self.worker_info_storage = JsonStorage(self.connection, prefix="")
-
-    def make_key(self, key):
-        return self.prefix + key
+        self.worker_info_storage = JsonStorage(self.connection, prefix=self.prefix)
 
     def get_worker_id(self):
         return self.worker_name + "#" + str(os.getpid())
 
-    def get_worker_key(self, worker_id):
-        return "worker:info:" + worker_id
+    def get_worker_key(self):
+        return "worker:info:" + self.get_worker_id()
 
     def update(self):
         info = {
@@ -34,13 +31,11 @@ class WorkerStateManager(object):
             "pid": os.getpid(),
             "tid": threading.get_ident(),
         }
-        worker_id = self.get_worker_id()
-        worker_key = self.get_worker_key(worker_id)
+        worker_key = self.get_worker_key()
         self.worker_info_storage.update(worker_key, info, self.expire)
 
     def delete(self):
-        worker_id = self.get_worker_id()
-        worker_key = self.get_worker_key(worker_id)
+        worker_key = self.get_worker_key()
         self.worker_info_storage.delete(worker_key)
 
 
