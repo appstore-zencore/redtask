@@ -1,7 +1,9 @@
+import time
 import uuid
 import redis
 import unittest
 from .base import TaskManage
+from .base import WorkerStateManager
 
 
 class TestRedtask(unittest.TestCase):
@@ -68,3 +70,10 @@ class TestRedtask(unittest.TestCase):
 
         closed = task_manager.close_finished("worker02", task_id)
         assert closed is False
+
+    def test03(self):
+        wsm = WorkerStateManager(self.connection, "worker03", expire=1, prefix="redtasktest")
+        wsm.update()
+        assert self.connection.keys("redtasktest:worker:info:worker03")
+        time.self(3)
+        assert not self.connection.keys("redtasktest:worker:info:worker03")
