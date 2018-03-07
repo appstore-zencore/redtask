@@ -24,6 +24,23 @@ class TestRedtask(unittest.TestCase):
         assert task["id"] == task_id
         assert task["status"] == "PULLED"
 
+        task = {
+            "result": {
+                "success": True,
+                "message": "hello",
+            },
+            "to_be_deleted": "hello",
+        }
+        task_manager.update(task_id, task)
+        task = task_manager.get(task_id)
+        assert "to_be_deleted" in task
+        assert "result" in task
+        assert task["result"]["success"]
+
+        task_manager.delete_field(task_id, "to_be_deleted")
+        task = task_manager.get(task_id)
+        assert not "to_be_deleted" in task
+
         task_manager.mark_finished("worker01", task_id)
         task = task_manager.get(task_id)        
         assert task["status"] == "FINISHED"
@@ -42,3 +59,12 @@ class TestRedtask(unittest.TestCase):
         task_manager.delete(task_id)
         task = task_manager.get(task_id)
         assert not task
+
+    def test02(self):
+        task_id = str(uuid.uuid4())
+        task_manager = TaskManage(self.connection, "redtasktest:")
+        task = task_manager.pull("test02", "worker02")
+        assert task is None
+
+        closed = task_manager.close_finished("worker02", task_id)
+        assert closed is False
