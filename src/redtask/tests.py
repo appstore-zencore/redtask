@@ -11,7 +11,7 @@ from .base import WorkerStateManager
 from .base import TaskServer
 
 
-def test_executor(task):
+def example_executor(task):
     counter = select(task, "data.counter")
     if counter in [0, 1]:
         raise ValueError("0 & 1 is not correct")
@@ -100,7 +100,9 @@ class TestRedtask(unittest.TestCase):
         assert not self.connection.keys(key)
 
     def test05(self):
-        e = import_from_string("redtask.tests.test_executor")
+        e = import_from_string("example_executor")
+        assert callable(e)
+        e = import_from_string("redtask.tests.example_executor")
         assert callable(e)
 
     def test06(self):
@@ -113,7 +115,7 @@ task-server:
             retry_on_timeout: true
             decode_responses: true        
     threads: 5
-    handler: redtask.tests.test_executor
+    handler: redtask.tests.example_executor
     pull-timeout: 1
     prefix: "test-task-server:"
     worker:
@@ -137,4 +139,4 @@ task-server:
             if i in [0, 1]:
                 assert "error" in server.task_manager.get(task_id)
             else:
-                assert server.task_manager.get(task_id)["result"] == task_id
+                assert server.task_manager.get(task_id)["result"] == i
