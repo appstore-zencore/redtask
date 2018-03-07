@@ -213,19 +213,20 @@ server.serve_forever()
         self.execute = import_from_string(self.handler)
         self.worker_state_manager = WorkerStateManager(self.connection, self.worker_name, self.worker_expire, self.prefix)
         self.task_manager = TaskManage(self.connection, self.prefix)
-        self.stop = False
+        self.stop_flag = False
         self.worker_keepalive_thread = None
         self.dead_worker_clean_thread = None
         self.pull_thread = None
         self.pull_finished_thread = None
 
     def make_connection(self, config):
+        print("redis connection config:", config)
         url = select(config, "url")
-        options = select(config, "options")
+        options = select(config, "options") or {}
         return redis.Redis.from_url(url, **options)
 
     def worker_keepalive_thread_main(self):
-        while not self.stop:
+        while not self.stop_flag:
             self.worker_state_manager.update()
             time.sleep(self.worker_expire/3)
 
@@ -235,30 +236,36 @@ server.serve_forever()
         self.worker_keepalive_thread.start()
 
     def start_dead_worker_clean_thread(self):
-        pass
-
-    def update_task_with_error(self, task, error_code, error_message, error_data):
-        task_id = task["id"]
-        info = {
-            "error": {
-                "code": error_code,
-                "message": error_message,
-                "data": error_data,
-                "time": time.time(),
-            }
-        }
-        self.task_manager.update(task_id, info)
+        pass 
 
     def task_process_main(self, task):
         try:
-            self.execute(task)
+            task_id = task["id"]
+            result = self.execute(task)
+            info = {
+                "result": result,
+            }
+            self.task_manager.update(task_id, info)
         except Exception as error:
             logger.exception("Task process failed: task={}".format(task))
             try:
-                self.update_task_with_error(task, -1, "Unknown error.", str(error))
+                task_id = task["id"]
+                info = {
+                    "error": {
+                        "code": -1,
+                        "message": "Unknown exception.",
+                        "data": str(error),
+                        "time": time.time(),
+                    }
+                }
+                self.task_manager.update(task_id, info)
             except Exception:
                 logger.exception("Task process failed and update task with error failed too...")
         finally:
+            try:
+                self.task_manager.mark_finished(self.worker_state_manager.get_worker_id(), task_id)
+            except:
+                logger.exception("Mark task finished failed: task={}.".format(task))
             self.worker_flag.release()
 
     def start_task_process(self, task):
@@ -271,7 +278,7 @@ server.serve_forever()
             logger.exception("Start task process failed, release a flag.")
 
     def pull_thread_main(self):
-        while not self.stop:
+        while not self.stop_flag:
             flag = self.worker_flag.acquire(timeout=1)
             if not flag:
                 continue
@@ -288,15 +295,18 @@ server.serve_forever()
         pass
 
     def start(self):
-        self.stop = False
+        self.stop_flag = False
         self.start_worker_keepalive_thread()
         self.start_dead_worker_clean_thread()
         self.start_pull_thread()
         self.start_pull_finished_thread()
 
-    def serve_forever(self):
-        while not self.stop:
+    def serve_forever(self, timeout=0):
+        stime = time.time()
+        while not self.stop_flag:
+            if timeout and time.time() - stime > timeout:
+                break
             time.sleep(1)
 
     def stop(self):
-        self.stop = True
+        self.stop_flag = True

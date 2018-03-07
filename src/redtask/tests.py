@@ -1,9 +1,18 @@
 import time
 import uuid
 import redis
+import multiprocessing
 import unittest
+import yaml
+from zencore.utils.magic import select
+from zencore.utils.magic import import_from_string
 from .base import TaskManage
 from .base import WorkerStateManager
+from .base import TaskServer
+
+
+def echo(task):
+    return select(task, "data.message")
 
 
 class TestRedtask(unittest.TestCase):
@@ -86,3 +95,37 @@ class TestRedtask(unittest.TestCase):
         assert self.connection.keys(key)
         wsm.delete()
         assert not self.connection.keys(key)
+
+    def test05(self):
+        e = import_from_string("echo")
+        assert callable(e)
+
+    def test06(self):
+        config = yaml.load("""
+task-server:
+    queue: test-task-server
+    redis:
+        url: redis://localhost/0
+    threads: 5
+    handler: redtask.tests.echo
+    pull-timeout: 1
+    prefix: "test-task-server:"
+    worker:
+        name: unittest
+        expire: 3
+        """)
+        print(config)
+        server = TaskServer(config)
+        server.start()
+        for i in range(0, 5):
+            task_id = "t{}".format(i)
+            task_data = {
+                "message": task_id,
+            }
+            server.task_manager.publish("test-task-server", task_id, task_data)
+        server.serve_forever(timeout=5)
+        server.stop()
+
+        for i in range(0, 5):
+            task_id = "t{}".format(i)
+            assert server.task_manager.get(task_id)["result"] == task_id
