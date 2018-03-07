@@ -244,7 +244,7 @@ server.serve_forever()
     def start_dead_worker_clean_thread(self):
         self.dead_worker_clean_thread = threading.Thread(target=self.dead_worker_clean_thread_main)
         self.dead_worker_clean_thread.setDaemon(True)
-        self.dead_worker_clean_thread.start() 
+        self.dead_worker_clean_thread.start()
 
     def task_process_main(self, task):
         try:
