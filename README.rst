@@ -1,4 +1,6 @@
 redtask
 =======
 
-Redis task manager
+Redis task manager.
+
+
