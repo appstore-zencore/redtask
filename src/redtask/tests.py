@@ -108,35 +108,48 @@ class TestRedtask(unittest.TestCase):
     def test06(self):
         config = yaml.load("""
 task-server:
+    prefix: "test-task-server:"
+    threads: 5
     queue: test-task-server
+    pull-timeout: 1
+    worker:
+        name: unittest
+        expire: 3    
     redis:
         url: redis://localhost/0
         options:
             retry_on_timeout: true
-            decode_responses: true        
-    threads: 5
-    handler: redtask.tests.example_executor
-    pull-timeout: 1
-    prefix: "test-task-server:"
-    worker:
-        name: unittest
-        expire: 3
+            decode_responses: true
+    handler:
+        class: redtask.handlers.SimpleHandler
+        options:
+            services:
+                debug.ping: redtask.debug.ping
+                debug.echo: redtask.debug.echo
         """)
         print(config)
         server = TaskServer(config)
         server.start()
-        for i in range(0, 5):
-            task_id = "t{}".format(i)
-            task_data = {
-                "counter": i,
+        server.task_manager.publish("test-task-server", "t1", {
+            "method": "debug.ping",
+        })
+        server.task_manager.publish("test-task-server", "t2", {
+            "method": "debug.echo",
+            "params": ["t2"]
+        })
+        server.task_manager.publish("test-task-server", "t3", {
+            "method": "debug.echo",
+            "params": {
+                "msg": "t3"
             }
-            server.task_manager.publish("test-task-server", task_id, task_data)
+        })
+        server.task_manager.publish("test-task-server", "t4", {
+            "method": "debug.NotImplementedService",
+        })
+        server.task_manager.publish("test-task-server", "t5", {
+            "method": "debug.echo",
+        })
         server.serve_forever(timeout=5)
         server.stop()
 
-        for i in range(0, 5):
-            task_id = "t{}".format(i)
-            if i in [0, 1]:
-                assert "error" in server.task_manager.get(task_id)
-            else:
-                assert server.task_manager.get(task_id)["result"] == i
+        assert 0

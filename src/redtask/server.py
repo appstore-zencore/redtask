@@ -184,8 +184,9 @@ class TaskServer(object):
         self.pull_timeout = select(config, "task-server.pull-timeout") or 1
         self.threads = select(config, "task-server.threads")
         self.worker_flag = threading.Semaphore(self.threads)
-        self.handler = select(config, "task-server.handler")
-        self.execute = import_from_string(self.handler)
+        self.handler_class = select(config, "task-server.handler.class")
+        self.handler_options = select(config, "task-server.handler.options")
+        self.executor = import_from_string(self.handler_class)(self.handler_options)
         self.worker_state_manager = WorkerStateManager(self.connection, self.worker_name, self.worker_expire, self.prefix)
         self.task_manager = TaskManage(self.connection, self.prefix)
         self.stop_flag = False
@@ -221,7 +222,7 @@ class TaskServer(object):
     def task_process_main(self, task):
         try:
             task_id = task["id"]
-            result = self.execute(task)
+            result = self.executor.execute(task)
             info = {
                 "result": result,
             }
@@ -264,7 +265,7 @@ class TaskServer(object):
             if not flag:
                 continue
             task = self.task_manager.pull(self.queue, self.worker_state_manager.get_worker_id(), timeout=self.pull_timeout)
-            if task and self.handler:
+            if task:
                 self.start_task_process(task)
 
     def start_pull_thread(self):
