@@ -2,11 +2,16 @@ import os
 import uuid
 import time
 import redis
+import logging
 import platform
 import threading
 from rjs import JsonStorage
 from zencore.utils.system import get_main_ipaddress
 from zencore.utils.magic import select
+from zencore.utils.magic import import_from_string
+
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerStateManager(object):
@@ -68,10 +73,13 @@ class TaskStateManager(object):
         task_queue_key = self.make_task_queue_key(queue)
         self.connection.rpush(task_queue_key, task_id)
 
-    def pull(self, queue, worker_id):
+    def pull(self, queue, worker_id, timeout=0):
         task_queue_key = self.make_task_queue_key(queue)
         worker_running_queue_key = self.make_worker_running_queue_key(worker_id)
-        task_id = self.connection.rpoplpush(task_queue_key, worker_running_queue_key)
+        if timeout:
+            task_id = self.connection.brpoplpush(task_queue_key, worker_running_queue_key, timeout=timeout)
+        else:
+            task_id = self.connection.rpoplpush(task_queue_key, worker_running_queue_key)
         return self.task_id_clean(task_id)
 
     def mark_finished(self, worker_id, task_id):
@@ -113,8 +121,8 @@ class TaskManage(object):
         self.state_manager.publish(queue, task_id)
         return task_id
 
-    def pull(self, queue, worker_id):
-        task_id = self.state_manager.pull(queue, worker_id)
+    def pull(self, queue, worker_id, timeout=0):
+        task_id = self.state_manager.pull(queue, worker_id, timeout=timeout)
         if not task_id:
             return None
         task = {
@@ -163,14 +171,22 @@ class TaskServer(object):
     """
 config.yml
 
-queue: hello
-redis:
-    url: redis://app02
-    options:
-prefix: "ansible-gateway:"
-worker:
-    name: 1a3c1921-07b5-476e-a53a-3a1f53b676a5
-    expire: 30
+application:
+    daemon: true
+    pidfile: /tmp/app.pid
+task-server:
+    queue: hello
+    threads: 10
+    handler: redtask.JsonrpcHandler
+    pull-timeout: 1
+
+    redis:
+        url: redis://app02
+        options:
+    prefix: "ansible-gateway:"
+    worker:
+        name: 1a3c1921-07b5-476e-a53a-3a1f53b676a5
+        expire: 30
 
 server = TaskServer(config)
 
@@ -184,52 +200,103 @@ server.serve_forever()
     """
     def __init__(self, config):
         self.config = config
-        self.prefix = select(config, "prefix")
-        self.connection_config = select(config, "redis")
+        self.prefix = select(config, "task-server.prefix")
+        self.connection_config = select(config, "task-server.redis")
         self.connection = self.make_connection(self.connection_config)
-        self.worker_name = select(config, "worker.name") or str(uuid.uuid4())
-        self.worker_expire = select(config, "worker.expire") or 30
-        self.queue = select(config, "queue")
+        self.worker_name = select(config, "task-server.worker.name") or str(uuid.uuid4())
+        self.worker_expire = select(config, "task-server.worker.expire") or 30
+        self.queue = select(config, "task-server.queue")
+        self.pull_timeout = select(config, "task-server.pull-timeout") or 1
+        self.threads = select(config, "task-server.threads")
+        self.worker_flag = threading.Semaphore(self.threads)
+        self.handler = select(config, "task-server.handler")
+        self.execute = import_from_string(self.handler)
         self.worker_state_manager = WorkerStateManager(self.connection, self.worker_name, self.worker_expire, self.prefix)
         self.task_manager = TaskManage(self.connection, self.prefix)
-        
+        self.stop = False
+        self.worker_keepalive_thread = None
+        self.dead_worker_clean_thread = None
+        self.pull_thread = None
+        self.pull_finished_thread = None
+
     def make_connection(self, config):
-        url = select(config, "url") or "redis://localhost/0"
-        options = select(config, "options") or {}
+        url = select(config, "url")
+        options = select(config, "options")
         return redis.Redis.from_url(url, **options)
 
-    def worker_state_manage_main(self):
+    def worker_keepalive_thread_main(self):
         while not self.stop:
             self.worker_state_manager.update()
-            time.sleep(self.worker_expire/2)
+            time.sleep(self.worker_expire/3)
 
-    def start_worker_state_manager(self):
-        self.worker_state_manager_thread = threading.Thread(target=self.worker_state_manage_main)
-        self.worker_state_manager_thread.setDaemon(True)
-        self.worker_state_manager_thread.start()
+    def start_worker_keepalive_thread(self):
+        self.worker_keepalive_thread = threading.Thread(target=self.worker_keepalive_thread_main)
+        self.worker_keepalive_thread.setDaemon(True)
+        self.worker_keepalive_thread.start()
 
-    def worker_pull_main(self):
+    def start_dead_worker_clean_thread(self):
+        pass
+
+    def update_task_with_error(self, task, error_code, error_message, error_data):
+        task_id = task["id"]
+        info = {
+            "error": {
+                "code": error_code,
+                "message": error_message,
+                "data": error_data,
+                "time": time.time(),
+            }
+        }
+        self.task_manager.update(task_id, info)
+
+    def task_process_main(self, task):
+        try:
+            self.execute(task)
+        except Exception as error:
+            logger.exception("Task process failed: task={}".format(task))
+            try:
+                self.update_task_with_error(task, -1, "Unknown error.", str(error))
+            except Exception:
+                logger.exception("Task process failed and update task with error failed too...")
+        finally:
+            self.worker_flag.release()
+
+    def start_task_process(self, task):
+        try:
+            t = threading.Thread(target=self.task_process_main, args=[task])
+            t.setDaemon(True)
+            t.start()
+        except Exception:
+            self.worker_flag.release()
+            logger.exception("Start task process failed, release a flag.")
+
+    def pull_thread_main(self):
         while not self.stop:
-            task_id = self.task_manager.pull(self.queue, self.worker_state_manager.get_worker_id())
-            if task_id:
-                task = self.task_manager
+            flag = self.worker_flag.acquire(timeout=1)
+            if not flag:
+                continue
+            task = self.task_manager.pull(self.queue, self.worker_state_manager.get_worker_id(), timeout=self.pull_timeout)
+            if task and self.handler:
+                self.start_task_process(task)
 
-    def start_worker_pull(self):
-        self.worker_pull_thread = threading.Thread(target=self.worker_pull_main)
-        self.worker_pull_thread.setDaemon(True)
-        self.worker_pull_thread.start()
+    def start_pull_thread(self):
+        self.pull_thread = threading.Thread(target=self.pull_thread_main)
+        self.pull_thread.setDaemon(True)
+        self.pull_thread.start()
 
-    def start_pull_finished_worker(self):
+    def start_pull_finished_thread(self):
         pass
 
     def start(self):
-        self.start_worker_state_manager()
-        self.start_pull_worker()
-        self.start_pull_finished_worker()
+        self.stop = False
+        self.start_worker_keepalive_thread()
+        self.start_dead_worker_clean_thread()
+        self.start_pull_thread()
+        self.start_pull_finished_thread()
 
     def serve_forever(self):
-        pass
+        while not self.stop:
+            time.sleep(1)
 
     def stop(self):
-        pass
-
+        self.stop = True
