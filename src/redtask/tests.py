@@ -11,8 +11,11 @@ from .base import WorkerStateManager
 from .base import TaskServer
 
 
-def echo(task):
-    return select(task, "data.message")
+def test_executor(task):
+    counter = select(task, "data.counter")
+    if counter in [0, 1]:
+        raise ValueError("0 & 1 is not correct")
+    return counter
 
 
 class TestRedtask(unittest.TestCase):
@@ -97,7 +100,7 @@ class TestRedtask(unittest.TestCase):
         assert not self.connection.keys(key)
 
     def test05(self):
-        e = import_from_string("echo")
+        e = import_from_string("redtask.tests.test_executor")
         assert callable(e)
 
     def test06(self):
@@ -106,8 +109,11 @@ task-server:
     queue: test-task-server
     redis:
         url: redis://localhost/0
+        options:
+            retry_on_timeout: true
+            decode_responses: true        
     threads: 5
-    handler: redtask.tests.echo
+    handler: redtask.tests.test_executor
     pull-timeout: 1
     prefix: "test-task-server:"
     worker:
@@ -120,7 +126,7 @@ task-server:
         for i in range(0, 5):
             task_id = "t{}".format(i)
             task_data = {
-                "message": task_id,
+                "counter": i,
             }
             server.task_manager.publish("test-task-server", task_id, task_data)
         server.serve_forever(timeout=5)
@@ -128,4 +134,7 @@ task-server:
 
         for i in range(0, 5):
             task_id = "t{}".format(i)
-            assert server.task_manager.get(task_id)["result"] == task_id
+            if i in [0, 1]:
+                assert "error" in server.task_manager.get(task_id)
+            else:
+                assert server.task_manager.get(task_id)["result"] == task_id

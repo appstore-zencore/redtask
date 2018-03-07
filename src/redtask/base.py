@@ -171,35 +171,7 @@ class TaskManage(object):
 
 
 class TaskServer(object):
-    """
-config.yml
-
-application:
-    daemon: true
-    pidfile: /tmp/app.pid
-task-server:
-    queue: hello
-    threads: 10
-    handler: redtask.JsonrpcHandler
-    pull-timeout: 1
-
-    redis:
-        url: redis://app02
-        options:
-    prefix: "ansible-gateway:"
-    worker:
-        name: 1a3c1921-07b5-476e-a53a-3a1f53b676a5
-        expire: 30
-
-server = TaskServer(config)
-
-def on_exit(sig, frame):
-    server.stop()
-
-server.start()
-signal.signal(signal.SIGTERM, on_exit)
-server.serve_forever()
-
+    """Task server.
     """
     def __init__(self, config):
         self.config = config
@@ -271,6 +243,7 @@ server.serve_forever()
                 logger.exception("Task process failed and update task with error failed too...")
         finally:
             try:
+                task_id = task["id"]
                 self.task_manager.mark_finished(self.worker_state_manager.get_worker_id(), task_id)
             except:
                 logger.exception("Mark task finished failed: task={}.".format(task))
