@@ -6,9 +6,9 @@ import unittest
 import yaml
 from zencore.utils.magic import select
 from zencore.utils.magic import import_from_string
-from .base import TaskManage
-from .base import WorkerStateManager
-from .base import TaskServer
+from .server import TaskManage
+from .server import WorkerStateManager
+from .server import TaskServer
 
 
 def example_executor(task):
