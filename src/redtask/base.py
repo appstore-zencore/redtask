@@ -220,7 +220,6 @@ server.serve_forever()
         self.pull_finished_thread = None
 
     def make_connection(self, config):
-        print("redis connection config:", config)
         url = select(config, "url")
         options = select(config, "options") or {}
         return redis.Redis.from_url(url, **options)
