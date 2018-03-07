@@ -114,7 +114,7 @@ task-server:
     pull-timeout: 1
     worker:
         name: unittest
-        expire: 3    
+        expire: 3
     redis:
         url: redis://localhost/0
         options:
@@ -122,7 +122,7 @@ task-server:
             decode_responses: true
     handler:
         class: redtask.handlers.SimpleHandler
-        options:
+        params:
             services:
                 debug.ping: redtask.debug.ping
                 debug.echo: redtask.debug.echo

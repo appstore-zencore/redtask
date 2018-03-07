@@ -185,8 +185,8 @@ class TaskServer(object):
         self.threads = select(config, "task-server.threads")
         self.worker_flag = threading.Semaphore(self.threads)
         self.handler_class = select(config, "task-server.handler.class")
-        self.handler_options = select(config, "task-server.handler.options")
-        self.executor = import_from_string(self.handler_class)(self.handler_options)
+        self.handler_params = select(config, "task-server.handler.params")
+        self.executor = import_from_string(self.handler_class)(self.handler_params)
         self.worker_state_manager = WorkerStateManager(self.connection, self.worker_name, self.worker_expire, self.prefix)
         self.task_manager = TaskManage(self.connection, self.prefix)
         self.stop_flag = False
