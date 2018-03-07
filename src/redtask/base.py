@@ -86,10 +86,13 @@ class TaskStateManager(object):
         worker_finished_queue_key = self.make_worker_finished_queue_key(worker_id)
         self.connection.lpush(worker_finished_queue_key, task_id)
 
-    def pull_finished(self, worker_id):
+    def pull_finished(self, worker_id, timeout=0):
         worker_finished_queue_key = self.make_worker_finished_queue_key(worker_id)
         worker_running_queue_key = self.make_worker_running_queue_key(worker_id)
-        task_id = self.connection.rpoplpush(worker_finished_queue_key, worker_running_queue_key)
+        if timeout:
+            task_id = self.connection.brpoplpush(worker_finished_queue_key, worker_running_queue_key, timeout=timeout)
+        else:
+            task_id = self.connection.rpoplpush(worker_finished_queue_key, worker_running_queue_key)
         return self.task_id_clean(task_id)
 
     def close_finished(self, worker_id, task_id):
@@ -141,8 +144,8 @@ class TaskManage(object):
         }
         self.task_storage.update(task_id, task)
 
-    def pull_finished(self, worker_id):
-        return self.state_manager.pull_finished(worker_id)
+    def pull_finished(self, worker_id, timeout=0):
+        return self.state_manager.pull_finished(worker_id, timeout=timeout)
 
     def close_finished(self, worker_id, task_id):
         closed = self.state_manager.close_finished(worker_id, task_id)
@@ -234,8 +237,14 @@ server.serve_forever()
         self.worker_keepalive_thread.setDaemon(True)
         self.worker_keepalive_thread.start()
 
+    def dead_worker_clean_thread_main(self):
+        while not self.stop_flag:
+            time.sleep(1)
+
     def start_dead_worker_clean_thread(self):
-        pass 
+        self.dead_worker_clean_thread = threading.Thread(target=self.dead_worker_clean_thread_main)
+        self.dead_worker_clean_thread.setDaemon(True)
+        self.dead_worker_clean_thread.start() 
 
     def task_process_main(self, task):
         try:
@@ -290,8 +299,17 @@ server.serve_forever()
         self.pull_thread.setDaemon(True)
         self.pull_thread.start()
 
+    def pull_finished_thread_main(self):
+        worker_id = self.worker_state_manager.get_worker_id()
+        while not self.stop_flag:
+            task_id = self.task_manager.pull_finished(worker_id, self.pull_timeout)
+            if task_id:
+                self.task_manager.close_finished(worker_id, task_id)
+
     def start_pull_finished_thread(self):
-        pass
+        self.pull_finished_thread = threading.Thread(target=self.pull_finished_thread_main)
+        self.pull_finished_thread.setDaemon(True)
+        self.pull_finished_thread.start()
 
     def start(self):
         self.stop_flag = False
