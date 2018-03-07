@@ -152,4 +152,8 @@ task-server:
         server.serve_forever(timeout=5)
         server.stop()
 
-        assert 0
+        assert server.task_manager.get("t1")["result"] == "pong"
+        assert server.task_manager.get("t2")["result"] == "t2"
+        assert server.task_manager.get("t3")["result"] == "t3"
+        assert "error" in server.task_manager.get("t4")
+        assert "error" in server.task_manager.get("t5")
