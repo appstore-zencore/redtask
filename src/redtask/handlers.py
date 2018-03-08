@@ -22,7 +22,20 @@ class BaseHandler(object):
         return self.services.get(name, None)
 
     def execute(self, task):
-        raise NotImplementedError()
+        data = task["data"]
+        method = data.get("method")
+        params = data.get("params")
+        if not method:
+            raise ValueError("Task not given method: task={}.".format(task))
+        service = self.get_service(method)
+        if not service:
+            raise NotImplementedError("Service {} not registered.".format(method))
+        if isinstance(params, dict):
+            return service(**params)
+        elif isinstance(params, (list, set)):
+            return service(*params)
+        else:
+            return service()
 
 
 class SimpleHandler(BaseHandler):
@@ -50,19 +63,3 @@ class SimpleHandler(BaseHandler):
             "name": name,
             "params": str(sig),
         }
-
-    def execute(self, task):
-        data = task["data"]
-        method = data.get("method")
-        params = data.get("params")
-        if not method:
-            raise ValueError("Task not given method: task={}.".format(task))
-        service = self.get_service(method)
-        if not service:
-            raise NotImplementedError("Service {} not registered.".format(method))
-        if isinstance(params, dict):
-            return service(**params)
-        elif isinstance(params, (list, set)):
-            return service(*params)
-        else:
-            return service()
