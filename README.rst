@@ -30,11 +30,9 @@ Example Config
     task-server:
         name: ctrlstack
         queue-name: run-ansible-playbook
-        pool-size: 30
+        pool-size: 3
         pull-timeout: 1
-        node:
-            name: unittest
-            keepalive: 3
+        keepalive: 3
         redis:
             url: redis://localhost/0
             options:
