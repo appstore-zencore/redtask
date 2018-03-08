@@ -109,9 +109,10 @@ class TestRedtask(unittest.TestCase):
 
     def test06(self):
         config = yaml.load("""
-services:
-  debug.ping: redtask.debug.ping
-  debug.echo: redtask.debug.echo
+task-executor:
+    services:
+        debug.ping: redtask.debug.ping
+        debug.echo: redtask.debug.echo
 task-server:
   name: ctrlstack
   queue-name: run-ansible-playbook
@@ -125,10 +126,9 @@ task-server:
       decode_responses: true
         """)
         print(config)
-        server = TaskServer(config)
-        executor = SimpleHandler()
-        executor.register_service("debug.ping", debug.ping)
-        executor.register_service("debug.echo", debug.echo)
+        server = TaskServer(select(config, "task-server"))
+        executor = SimpleHandler(select(config, "task-executor"))
+        print(executor.services)
         server.register_executor(executor)
         server.start()
         server.task_manager.publish(server.queue_name, "t1", {

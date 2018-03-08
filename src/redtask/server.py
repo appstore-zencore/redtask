@@ -175,13 +175,13 @@ class TaskServer(object):
     def __init__(self, config):
         self.config = config
         self.worker_name = str(uuid.uuid4())
-        self.name = select(config, "task-server.name")
-        self.connection_config = select(config, "task-server.redis")
+        self.name = select(config, "name")
+        self.connection_config = select(config, "redis")
         self.connection = self.make_connection(self.connection_config)
-        self.keepalive = select(config, "task-server.keepalive") or 30
-        self.queue_name = select(config, "task-server.queue-name")
-        self.pull_timeout = select(config, "task-server.pull-timeout") or 1
-        self.pool_size = select(config, "task-server.pool-size")
+        self.keepalive = select(config, "keepalive") or 30
+        self.queue_name = select(config, "queue-name")
+        self.pull_timeout = select(config, "pull-timeout") or 1
+        self.pool_size = select(config, "pool-size")
         self.pool_token = threading.Semaphore(self.pool_size)
         self.worker_state_manager = WorkerStateManager(self.connection, self.name, self.worker_name, self.keepalive)
         self.task_manager = TaskManager(self.connection, self.name)
