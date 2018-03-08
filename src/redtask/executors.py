@@ -3,7 +3,7 @@ from zencore.utils.magic import select
 from zencore.utils.magic import import_from_string
 
 
-class SimpleHandler(object):
+class TaskExecutor(object):
     def __init__(self, config=None):
         self.config = config or {}
         self.services = {}

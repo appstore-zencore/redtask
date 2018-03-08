@@ -9,7 +9,7 @@ from zencore.utils.magic import import_from_string
 from .server import TaskManager
 from .server import WorkerStateManager
 from .server import TaskServer
-from .handlers import SimpleHandler
+from .executors import TaskExecutor
 from . import debug
 
 
@@ -127,7 +127,7 @@ class TestRedtask(unittest.TestCase):
         """)
         print(config)
         server = TaskServer(select(config, "task-server"))
-        executor = SimpleHandler(select(config, "task-executor"))
+        executor = TaskExecutor(select(config, "task-executor"))
         print(executor.services)
         server.register_executor(executor)
         server.start()
