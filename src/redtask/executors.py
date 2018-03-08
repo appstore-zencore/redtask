@@ -1,6 +1,10 @@
 import inspect
+import logging
 from zencore.utils.magic import select
 from zencore.utils.magic import import_from_string
+
+
+logger = logging.getLogger(__name__)
 
 
 class TaskExecutor(object):
@@ -12,27 +16,35 @@ class TaskExecutor(object):
         self.load_services()
 
     def register_service(self, name, callback):
+        logger.debug("Register a service to TaskExecutor: name={} callback={}.".format(name, callback))
         if callable(callback):
             self.services[name] = callback
             return True
         elif isinstance(callback, str):
-            self.services[name] = import_from_string(callback)
-            return True
-        else:
-            return False
+            service = import_from_string(callback)
+            if callable(service):
+                self.services[name] = service
+                return True
+        logger.warn("Register a service failed: name={}.".format(name))
+        return False
 
     def get_service(self, name):
         return self.services.get(name, None)
 
     def execute(self, task):
+        logger.debug("Start to execute a task: task={}.".format(task))
         data = task["data"]
         method = data.get("method")
         params = data.get("params")
         if not method:
-            raise ValueError("Task not given method: task={}.".format(task))
+            error_message = "Task NOT contain method failed: task={}.".format(task)
+            logger.error(error_message)
+            raise KeyError(error_message)
         service = self.get_service(method)
         if not service:
-            raise NotImplementedError("Service {} not registered.".format(method))
+            error_message = "Task contain a method not registered: method={}.".format(method)
+            logger.error(error_message)
+            raise NotImplementedError(error_message)
         if isinstance(params, dict):
             return service(**params)
         elif isinstance(params, (list, set)):
