@@ -35,6 +35,7 @@ class WorkerStateManager(object):
             "mainip": get_main_ipaddress(),
             "pid": os.getpid(),
             "tid": threading.get_ident(),
+            "time": time.time(),
         }
         worker_key = self.get_worker_key()
         self.worker_info_storage.update(worker_key, info, self.expire)
