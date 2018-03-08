@@ -122,8 +122,8 @@ class TestRedtask(unittest.TestCase):
         redis:
             url: redis://localhost/0
             options:
-            retry_on_timeout: true
-            decode_responses: true
+                retry_on_timeout: true
+                decode_responses: true
         """)
         print(config)
         server = TaskServer(select(config, "task-server"))

@@ -37,5 +37,5 @@ Example Config
         redis:
             url: redis://localhost/0
             options:
-            retry_on_timeout: true
-            decode_responses: true
+                retry_on_timeout: true
+                decode_responses: true
