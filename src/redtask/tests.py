@@ -109,21 +109,21 @@ class TestRedtask(unittest.TestCase):
 
     def test06(self):
         config = yaml.load("""
-task-executor:
-    services:
-        debug.ping: redtask.debug.ping
-        debug.echo: redtask.debug.echo
-task-server:
-  name: ctrlstack
-  queue-name: run-ansible-playbook
-  pool-size: 3
-  pull-timeout: 1
-  keepalive: 3
-  redis:
-    url: redis://localhost/0
-    options:
-      retry_on_timeout: true
-      decode_responses: true
+    task-executor:
+        services:
+            debug.ping: redtask.debug.ping
+            debug.echo: redtask.debug.echo
+    task-server:
+        name: ctrlstack
+        queue-name: run-ansible-playbook
+        pool-size: 3
+        pull-timeout: 1
+        keepalive: 3
+        redis:
+            url: redis://localhost/0
+            options:
+            retry_on_timeout: true
+            decode_responses: true
         """)
         print(config)
         server = TaskServer(select(config, "task-server"))

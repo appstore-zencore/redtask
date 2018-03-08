@@ -24,9 +24,10 @@ Example Config
 
 ::
 
-    services:
-        debug.ping: redtask.debug.ping
-        debug.echo: redtask.debug.echo
+    task-executor:
+        services:
+            debug.ping: redtask.debug.ping
+            debug.echo: redtask.debug.echo
     task-server:
         name: ctrlstack
         queue-name: run-ansible-playbook
