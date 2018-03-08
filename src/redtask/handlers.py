@@ -3,11 +3,14 @@ from zencore.utils.magic import select
 from zencore.utils.magic import import_from_string
 
 
-class BaseHandler(object):
+class SimpleHandler(object):
     def __init__(self, config=None):
         self.config = config or {}
         self.services = {}
-    
+        self.register_service("system.listMethods", self.listMethods)
+        self.register_service("system.methodSignature", self.methodSignature)
+        self.load_services()
+
     def register_service(self, name, callback):
         if callable(callback):
             self.services[name] = callback
@@ -36,15 +39,6 @@ class BaseHandler(object):
             return service(*params)
         else:
             return service()
-
-
-class SimpleHandler(BaseHandler):
-
-    def __init__(self, config=None):
-        super(SimpleHandler, self).__init__(config)
-        self.register_service("system.listMethods", self.listMethods)
-        self.register_service("system.methodSignature", self.methodSignature)
-        self.load_services()
 
     def load_services(self):
         services_map = select(self.config, "services") or {}
