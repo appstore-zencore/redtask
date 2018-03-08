@@ -152,6 +152,13 @@ task-server:
         server.task_manager.publish(server.queue_name, "t5", {
             "method": "debug.echo",
         })
+        server.task_manager.publish(server.queue_name, "t6", {
+            "method": "system.listMethods",
+        })
+        server.task_manager.publish(server.queue_name, "t7", {
+            "method": "system.methodSignature",
+            "params": ["debug.echo"],
+        })
         server.serve_forever(timeout=5)
         server.stop()
 
@@ -160,3 +167,5 @@ task-server:
         assert server.task_manager.get("t3")["result"] == "t3"
         assert "error" in server.task_manager.get("t4")
         assert "error" in server.task_manager.get("t5")
+        assert "system.listMethods" in server.task_manager.get("t6")["result"]
+        assert "params" in server.task_manager.get("t7")["result"]

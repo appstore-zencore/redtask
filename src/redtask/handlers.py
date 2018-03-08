@@ -1,3 +1,4 @@
+import inspect
 from zencore.utils.magic import select
 from zencore.utils.magic import import_from_string
 
@@ -28,12 +29,27 @@ class SimpleHandler(BaseHandler):
 
     def __init__(self, config=None):
         super(SimpleHandler, self).__init__(config)
+        self.register_service("system.listMethods", self.listMethods)
+        self.register_service("system.methodSignature", self.methodSignature)
         self.load_services()
 
     def load_services(self):
         services_map = select(self.config, "services") or {}
         for name, callback in services_map.items():
             self.register_service(name, callback)
+
+    def listMethods(self):
+        methods = list(self.services.keys())
+        methods.sort()
+        return methods
+
+    def methodSignature(self, name):
+        service = self.get_service(name)
+        sig = inspect.signature(service)
+        return {
+            "name": name,
+            "params": str(sig),
+        }
 
     def execute(self, task):
         data = task["data"]
