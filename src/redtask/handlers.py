@@ -3,8 +3,8 @@ from zencore.utils.magic import import_from_string
 
 
 class BaseHandler(object):
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, config=None):
+        self.config = config or {}
         self.services = {}
     
     def register_service(self, name, callback):
@@ -26,13 +26,13 @@ class BaseHandler(object):
 
 class SimpleHandler(BaseHandler):
 
-    def __init__(self, config):
+    def __init__(self, config=None):
         super(SimpleHandler, self).__init__(config)
-        self.services_map = select(self.config, "services")
         self.load_services()
 
     def load_services(self):
-        for name, callback in self.services_map.items():
+        services_map = select(self.config, "services") or {}
+        for name, callback in services_map.items():
             self.register_service(name, callback)
 
     def execute(self, task):

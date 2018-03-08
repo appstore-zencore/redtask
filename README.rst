@@ -24,21 +24,19 @@ Example Config
 
 ::
 
-    application:
-        daemon: true
-        pidfile: /tmp/app.pid
+    services:
+        debug.ping: redtask.debug.ping
+        debug.echo: redtask.debug.echo
     task-server:
-        queue: qname
-        threads: 10
-        handler: example.task.handler
+        name: ctrlstack
+        queue-name: run-ansible-playbook
+        pool-size: 30
         pull-timeout: 1
+        node:
+            name: unittest
+            keepalive: 3
         redis:
             url: redis://localhost/0
             options:
-                retry_on_timeout: true
-                decode_responses: true
-        prefix: "ansible-gateway:"
-        worker:
-            name: 1a3c1921-07b5-476e-a53a-3a1f53b676a5
-            expire: 30
-
+            retry_on_timeout: true
+            decode_responses: true

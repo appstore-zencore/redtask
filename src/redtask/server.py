@@ -15,18 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 class WorkerStateManager(object):
-    def __init__(self, connection, worker_name, expire=30, prefix=""):
+    def __init__(self, connection, server_name, worker_name, keepalive=30):
         self.connection = connection
+        self.server_name = server_name        
         self.worker_name = worker_name
-        self.prefix = prefix
-        self.expire = expire
-        self.worker_info_storage = JsonStorage(self.connection, prefix=self.prefix)
-
-    def get_worker_id(self):
-        return self.worker_name + "#" + str(os.getpid())
+        self.keepalive = keepalive
+        self.worker_info_storage = JsonStorage(self.connection, prefix=self.server_name + ":")
 
     def get_worker_key(self):
-        return "worker:info:" + self.get_worker_id()
+        return "worker:info:" + self.worker_name
 
     def update(self):
         info = {
@@ -38,7 +35,7 @@ class WorkerStateManager(object):
             "time": time.time(),
         }
         worker_key = self.get_worker_key()
-        self.worker_info_storage.update(worker_key, info, self.expire)
+        self.worker_info_storage.update(worker_key, info, self.keepalive)
 
     def delete(self):
         worker_key = self.get_worker_key()
@@ -48,9 +45,9 @@ class WorkerStateManager(object):
 class TaskStateManager(object):
     """Task ID life cycle.
     """
-    def __init__(self, connection, prefix=""):
+    def __init__(self, connection, server_name):
         self.connection = connection
-        self.prefix = prefix
+        self.server_name = server_name
 
     def task_id_clean(self, task_id):
         if task_id:
@@ -59,7 +56,7 @@ class TaskStateManager(object):
         return task_id
 
     def make_key(self, key):
-        return self.prefix + key
+        return self.server_name + ":" + key
 
     def make_task_queue_key(self, queue):
         return self.make_key("queue:" + queue)
@@ -104,14 +101,15 @@ class TaskStateManager(object):
         return False
 
 
-class TaskManage(object):
+class TaskManager(object):
     """Task state & data manager.
     """
-    def __init__(self, connection, prefix=""):
+    def __init__(self, connection, server_name):
         self.connection = connection
-        self.prefix = prefix
-        self.task_data_prefix = prefix + "task:"
-        self.state_manager = TaskStateManager(self.connection, self.prefix)
+        self.server_name = server_name
+        self.task_data_prefix = server_name + ":task:"
+        print(self.task_data_prefix)
+        self.state_manager = TaskStateManager(self.connection, self.server_name)
         self.task_storage = JsonStorage(self.connection, self.task_data_prefix)
 
     def publish(self, queue, task_id, task_data):
@@ -176,25 +174,26 @@ class TaskServer(object):
     """
     def __init__(self, config):
         self.config = config
-        self.prefix = select(config, "task-server.prefix")
+        self.worker_name = str(uuid.uuid4())
+        self.name = select(config, "task-server.name")
         self.connection_config = select(config, "task-server.redis")
         self.connection = self.make_connection(self.connection_config)
-        self.worker_name = select(config, "task-server.worker.name") or str(uuid.uuid4())
-        self.worker_expire = select(config, "task-server.worker.expire") or 30
-        self.queue = select(config, "task-server.queue")
+        self.keepalive = select(config, "task-server.keepalive") or 30
+        self.queue_name = select(config, "task-server.queue-name")
         self.pull_timeout = select(config, "task-server.pull-timeout") or 1
-        self.threads = select(config, "task-server.threads")
-        self.worker_flag = threading.Semaphore(self.threads)
-        self.handler_class = select(config, "task-server.handler.class")
-        self.handler_params = select(config, "task-server.handler.params")
-        self.executor = import_from_string(self.handler_class)(self.handler_params)
-        self.worker_state_manager = WorkerStateManager(self.connection, self.worker_name, self.worker_expire, self.prefix)
-        self.task_manager = TaskManage(self.connection, self.prefix)
+        self.pool_size = select(config, "task-server.pool-size")
+        self.pool_token = threading.Semaphore(self.pool_size)
+        self.worker_state_manager = WorkerStateManager(self.connection, self.name, self.worker_name, self.keepalive)
+        self.task_manager = TaskManager(self.connection, self.name)
+        self.executor = None        
         self.stop_flag = False
         self.worker_keepalive_thread = None
         self.dead_worker_clean_thread = None
         self.pull_thread = None
         self.pull_finished_thread = None
+
+    def register_executor(self, executor):
+        self.executor = executor
 
     def make_connection(self, config):
         url = select(config, "url")
@@ -204,7 +203,7 @@ class TaskServer(object):
     def worker_keepalive_thread_main(self):
         while not self.stop_flag:
             self.worker_state_manager.update()
-            time.sleep(self.worker_expire/3)
+            time.sleep(max(self.keepalive-5, 1))
 
     def start_worker_keepalive_thread(self):
         self.worker_keepalive_thread = threading.Thread(target=self.worker_keepalive_thread_main)
@@ -246,10 +245,10 @@ class TaskServer(object):
         finally:
             try:
                 task_id = task["id"]
-                self.task_manager.mark_finished(self.worker_state_manager.get_worker_id(), task_id)
+                self.task_manager.mark_finished(self.worker_name, task_id)
             except:
                 logger.exception("Mark task finished failed: task={}.".format(task))
-            self.worker_flag.release()
+            self.pool_token.release()
 
     def start_task_process(self, task):
         try:
@@ -257,15 +256,15 @@ class TaskServer(object):
             t.setDaemon(True)
             t.start()
         except Exception:
-            self.worker_flag.release()
+            self.pool_token.release()
             logger.exception("Start task process failed, release a flag.")
 
     def pull_thread_main(self):
         while not self.stop_flag:
-            flag = self.worker_flag.acquire(timeout=1)
-            if not flag:
+            got = self.pool_token.acquire(timeout=1)
+            if not got:
                 continue
-            task = self.task_manager.pull(self.queue, self.worker_state_manager.get_worker_id(), timeout=self.pull_timeout)
+            task = self.task_manager.pull(self.queue_name, self.worker_name, timeout=self.pull_timeout)
             if task:
                 self.start_task_process(task)
 
@@ -275,11 +274,10 @@ class TaskServer(object):
         self.pull_thread.start()
 
     def pull_finished_thread_main(self):
-        worker_id = self.worker_state_manager.get_worker_id()
         while not self.stop_flag:
-            task_id = self.task_manager.pull_finished(worker_id, self.pull_timeout)
+            task_id = self.task_manager.pull_finished(self.worker_name, self.pull_timeout)
             if task_id:
-                self.task_manager.close_finished(worker_id, task_id)
+                self.task_manager.close_finished(self.worker_name, task_id)
 
     def start_pull_finished_thread(self):
         self.pull_finished_thread = threading.Thread(target=self.pull_finished_thread_main)

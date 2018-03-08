@@ -6,9 +6,11 @@ import unittest
 import yaml
 from zencore.utils.magic import select
 from zencore.utils.magic import import_from_string
-from .server import TaskManage
+from .server import TaskManager
 from .server import WorkerStateManager
 from .server import TaskServer
+from .handlers import SimpleHandler
+from . import debug
 
 
 def example_executor(task):
@@ -25,7 +27,7 @@ class TestRedtask(unittest.TestCase):
 
     def test01(self):
         task_id = str(uuid.uuid4())
-        task_manager = TaskManage(self.connection, "redtasktest:")
+        task_manager = TaskManager(self.connection, "redtasktest")
         task_manager.publish("test01", task_id, {"method": "debug.ping"})
         task = task_manager.get(task_id)
         assert self.connection.llen("redtasktest:queue:test01") == 1
@@ -76,7 +78,7 @@ class TestRedtask(unittest.TestCase):
 
     def test02(self):
         task_id = str(uuid.uuid4())
-        task_manager = TaskManage(self.connection, "redtasktest:")
+        task_manager = TaskManager(self.connection, "redtasktest:")
         task = task_manager.pull("test02", "worker02")
         assert task is None
 
@@ -84,7 +86,7 @@ class TestRedtask(unittest.TestCase):
         assert closed is False
 
     def test03(self):
-        wsm = WorkerStateManager(self.connection, "worker03", expire=1, prefix="redtasktest")
+        wsm = WorkerStateManager(self.connection, "redtasktest", "worker03", 1)
         key = wsm.worker_info_storage.make_key(wsm.get_worker_key())
         wsm.update()
         assert self.connection.keys(key)
@@ -92,7 +94,7 @@ class TestRedtask(unittest.TestCase):
         assert not self.connection.keys(key)
 
     def test04(self):
-        wsm = WorkerStateManager(self.connection, "worker04", expire=30, prefix="redtasktest")
+        wsm = WorkerStateManager(self.connection, "redtasktest", "worker04", 30)
         key = wsm.worker_info_storage.make_key(wsm.get_worker_key())
         wsm.update()
         assert self.connection.keys(key)
@@ -107,46 +109,47 @@ class TestRedtask(unittest.TestCase):
 
     def test06(self):
         config = yaml.load("""
+services:
+  debug.ping: redtask.debug.ping
+  debug.echo: redtask.debug.echo
 task-server:
-    prefix: "test-task-server:"
-    threads: 5
-    queue: test-task-server
-    pull-timeout: 1
-    worker:
-        name: unittest
-        expire: 3
-    redis:
-        url: redis://localhost/0
-        options:
-            retry_on_timeout: true
-            decode_responses: true
-    handler:
-        class: redtask.handlers.SimpleHandler
-        params:
-            services:
-                debug.ping: redtask.debug.ping
-                debug.echo: redtask.debug.echo
+  name: ctrlstack
+  queue-name: run-ansible-playbook
+  pool-size: 30
+  pull-timeout: 1
+  node:
+    name: unittest
+    keepalive: 3
+  redis:
+    url: redis://localhost/0
+    options:
+      retry_on_timeout: true
+      decode_responses: true
         """)
         print(config)
         server = TaskServer(config)
+        executor = SimpleHandler()
+        executor.register_service("debug.ping", debug.ping)
+        executor.register_service("debug.echo", debug.echo)
+        server.register_executor(executor)
         server.start()
-        server.task_manager.publish("test-task-server", "t1", {
+        server.task_manager.publish(server.queue_name, "t1", {
             "method": "debug.ping",
         })
-        server.task_manager.publish("test-task-server", "t2", {
+        server.task_manager.publish(server.queue_name, "t2", {
             "method": "debug.echo",
             "params": ["t2"]
         })
-        server.task_manager.publish("test-task-server", "t3", {
+        server.task_manager.publish(server.queue_name, "t3", {
             "method": "debug.echo",
             "params": {
                 "msg": "t3"
             }
         })
-        server.task_manager.publish("test-task-server", "t4", {
+        server.task_manager.publish(server.queue_name, "t4", {
             "method": "debug.NotImplementedService",
         })
-        server.task_manager.publish("test-task-server", "t5", {
+        server.task_manager.publish(server.queue_name, "t5", {
             "method": "debug.echo",
         })
         server.serve_forever(timeout=5)
